@@ -4,7 +4,7 @@
     "name": "High Speaker",
     "role": "speaker",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-amber-500 to-yellow-700"
   },
   {
@@ -20,7 +20,7 @@
     "name": "The Technocrat",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-emerald-500 to-teal-700"
   },
   {
@@ -28,7 +28,7 @@
     "name": "The Ethicist",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-rose-500 to-pink-700"
   },
   {
@@ -36,7 +36,7 @@
     "name": "The Pragmatist",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-slate-500 to-gray-700"
   },
   {
@@ -44,7 +44,7 @@
     "name": "The Visionary",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-violet-500 to-purple-700"
   },
   {
@@ -52,7 +52,7 @@
     "name": "The Sentinel",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-red-600 to-red-900"
   },
   {
@@ -60,7 +60,7 @@
     "name": "The Historian",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-amber-700 to-orange-900"
   },
   {
@@ -68,7 +68,7 @@
     "name": "The Diplomat",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-sky-400 to-blue-500"
   },
   {
@@ -76,7 +76,7 @@
     "name": "The Skeptic",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-stone-500 to-stone-700"
   },
   {
@@ -92,7 +92,7 @@
     "name": "The Journalist",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-yellow-500 to-orange-500"
   },
   {
@@ -100,7 +100,7 @@
     "name": "The Propagandist",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-fuchsia-600 to-purple-800"
   },
   {
@@ -108,7 +108,7 @@
     "name": "The Psychologist",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-teal-400 to-cyan-600"
   },
   {
@@ -148,7 +148,7 @@
     "name": "The Scientist",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-emerald-500 to-teal-600"
   },
   {
@@ -164,7 +164,7 @@
     "name": "The Meteorologist",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-sky-500 to-blue-600"
   },
   {
@@ -172,7 +172,7 @@
     "name": "The Emergency Manager",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-orange-500 to-red-600"
   },
   {
@@ -180,7 +180,7 @@
     "name": "The Animal Care Specialist",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-amber-500 to-yellow-600"
   },
   {
@@ -188,7 +188,7 @@
     "name": "The Risk Analyst",
     "role": "councilor",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-slate-500 to-gray-600"
   },
   {
@@ -212,7 +212,7 @@
     "name": "Specialist Legal",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-slate-600 to-slate-800"
   },
   {
@@ -220,7 +220,7 @@
     "name": "Specialist Science",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-teal-500 to-emerald-600"
   },
   {
@@ -228,7 +228,7 @@
     "name": "Specialist Finance",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-yellow-600 to-amber-700"
   },
   {
@@ -236,7 +236,7 @@
     "name": "Specialist Military",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-stone-600 to-stone-800"
   },
   {
@@ -244,7 +244,7 @@
     "name": "Specialist Medical",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-rose-400 to-red-500"
   },
   {
@@ -252,7 +252,7 @@
     "name": "The Insurance Actuary",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-blue-600 to-indigo-700"
   },
   {
@@ -260,7 +260,7 @@
     "name": "The Cyber Warlord",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-red-700 to-red-900"
   },
   {
@@ -268,7 +268,7 @@
     "name": "The Constitutional Scholar",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-amber-700 to-yellow-800"
   },
   {
@@ -276,7 +276,7 @@
     "name": "The Epidemiologist",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-emerald-600 to-teal-700"
   },
   {
@@ -284,7 +284,7 @@
     "name": "The Financial Analyst",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-emerald-700 to-green-800"
   },
   {
@@ -292,7 +292,7 @@
     "name": "The Intelligence Officer",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-slate-700 to-zinc-800"
   },
   {
@@ -300,7 +300,7 @@
     "name": "The Climate Scientist",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-cyan-600 to-blue-700"
   },
   {
@@ -308,7 +308,7 @@
     "name": "The Crisis Negotiator",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-orange-600 to-red-700"
   },
   {
@@ -316,7 +316,7 @@
     "name": "The UX Researcher",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-pink-500 to-rose-600"
   },
   {
@@ -324,7 +324,7 @@
     "name": "The Infrastructure Engineer",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-yellow-600 to-amber-700"
   },
   {
@@ -332,7 +332,7 @@
     "name": "The Bioethicist",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-fuchsia-600 to-purple-700"
   },
   {
@@ -340,7 +340,7 @@
     "name": "The Supply Chain Analyst",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-lime-600 to-green-700"
   },
   {
@@ -348,7 +348,7 @@
     "name": "The Urban Planner",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-orange-500 to-amber-600"
   },
   {
@@ -356,7 +356,7 @@
     "name": "The Naval Strategist",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-blue-800 to-slate-900"
   },
   {
@@ -364,7 +364,7 @@
     "name": "The Data Privacy Officer",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-violet-600 to-purple-800"
   },
   {
@@ -372,7 +372,7 @@
     "name": "The Cultivator",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-green-600 to-emerald-700"
   },
   {
@@ -380,7 +380,7 @@
     "name": "The Trichome Inspector",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-purple-500 to-violet-700"
   },
   {
@@ -388,7 +388,7 @@
     "name": "The Nutrient Manager",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-amber-500 to-orange-600"
   },
   {
@@ -396,7 +396,7 @@
     "name": "The IPM Specialist",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-red-600 to-red-800"
   },
   {
@@ -404,7 +404,7 @@
     "name": "The Cure Master",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-yellow-600 to-amber-700"
   },
   {
@@ -412,7 +412,7 @@
     "name": "The Compliance Officer",
     "role": "specialist",
     "enabled": true,
-    "model": "MiniMax-M2.5",
+    "model": "MiniMax-M2.7",
     "color": "from-slate-500 to-gray-700"
   }
 ]
