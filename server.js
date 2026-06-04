@@ -18,7 +18,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
-const PORT = process.env.PORT || 3006;
+const PORT = process.env.PORT || 3001;
 const SSE_CLIENTS = new Set();
 const sessions = new Map();
 
@@ -29,8 +29,9 @@ const PROVIDERS = {
     minimax: {
         name: 'MiniMax',
         apiKey: process.env.MINIMAX_API_KEY || '',
-        apiUrl: 'https://api.minimax.chat/v1/text/chatcompletion_pro?GroupId=tuoyunbauVJxbGWRy',
-        model: 'MiniMax-M2.7',
+        // Hermes-correct endpoint: api.minimax.io via OAuth/Anthropic-compat (api.minimax.chat is the legacy/dead one)
+        apiUrl: process.env.MINIMAX_API_URL || 'https://api.minimax.io/v1/chat/completions',
+        model: process.env.MINIMAX_MODEL || 'MiniMax-M2.7',
         default: true
     },
     lmstudio: {
@@ -104,23 +105,7 @@ async function callProvider(providerName, messages, options = {}) {
         let payload, headers, url;
         
         if (providerName === 'minimax') {
-            // MiniMax API
-            payload = {
-                model: provider.model,
-                tokens_to_generate: options.maxTokens || 512,
-                temperature: options.temperature || 0.7,
-                top_p: 0.95,
-                stream: false,
-                messages: messages.map(m => ({
-                    role: m.role || 'user',
-                    name: m.name || m.councilor || 'assistant',
-                    content: m.content
-                }))
-            };
-            headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${provider.apiKey}` };
-            url = provider.apiUrl;
-        } else if (providerName === 'lmstudio') {
-            // LM Studio API (OpenAI compatible)
+            // Hermes patch: api.minimax.io is OpenAI-compatible (api.minimax.chat was the old one)
             payload = {
                 model: options.model || provider.model,
                 messages: messages.map(m => ({ role: m.role || 'user', content: m.content })),
@@ -128,6 +113,19 @@ async function callProvider(providerName, messages, options = {}) {
                 max_tokens: options.maxTokens || 512
             };
             headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${provider.apiKey}` };
+            url = provider.apiUrl;
+        } else if (providerName === 'lmstudio') {
+            // LM Studio API (OpenAI compatible). Hermes patch: auth optional.
+            payload = {
+                model: options.model || provider.model,
+                messages: messages.map(m => ({ role: m.role || 'user', content: m.content })),
+                temperature: options.temperature || 0.7,
+                max_tokens: options.maxTokens || 512
+            };
+            headers = { 'Content-Type': 'application/json' };
+            if (provider.apiKey && provider.apiKey !== 'local-no-token-needed') {
+                headers['Authorization'] = `Bearer ${provider.apiKey}`;
+            }
             url = `${provider.apiUrl}/chat/completions`;
         } else if (providerName === 'openrouter') {
             // OpenRouter API
@@ -252,6 +250,15 @@ app.get('/api/events', (req, res) => {
     });
 });
 
+// ── HELPERS (must be defined before any route that uses them) ───────────────
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+function appendAudit(event, data = {}) {
+    if (!liveSession || !liveSession.audit) return;
+    liveSession.audit.push({ ts: new Date().toISOString(), event, ...data });
+    // Cap audit log to last 500 events to keep the response sane
+    if (liveSession.audit.length > 500) liveSession.audit = liveSession.audit.slice(-500);
+}
+
 // ─── SESSION EVENTS — frontend pushes events here ────────────
 let liveSession = {
     id: null,
@@ -260,8 +267,11 @@ let liveSession = {
     phase: 'idle',
     startedAt: null,
     messages: [],
+    contextBlocks: [],
     councilors: [],
+    votes: {},
     voteData: null,
+    audit: [],
     stats: { messages: 0, yeas: 0, nays: 0 }
 };
 
@@ -272,14 +282,32 @@ const DELIBERATION_DELAY_MS = 2000; // 2 seconds between messages
 
 app.post('/api/session/start', (req, res) => {
     const { topic, mode, councilors } = req.body;
-    
+    if (!topic) return res.status(400).json({ error: 'topic is required' });
+
     // Load councilors from file
     let availableCouncilors = [];
     try {
         const councilorsData = JSON.parse(readFileSync(join(__dirname, 'councilors.json'), 'utf-8'));
-        availableCouncilors = councilorsData.filter(c => c.enabled).slice(0, 5); // Use first 5 for demo
+        availableCouncilors = councilorsData.filter(c => c.enabled);
     } catch (e) {}
-    
+
+    // Honor the requested councilor list (filter to enabled ones, preserve order)
+    let selected = [];
+    if (Array.isArray(councilors) && councilors.length > 0) {
+        const byId = new Map(availableCouncilors.map(c => [c.id, c]));
+        const byName = new Map(availableCouncilors.map(c => [(c.name || '').toLowerCase(), c]));
+        for (const want of councilors) {
+            const key = String(want).toLowerCase();
+            const match = byId.get(want) || byName.get(key);
+            if (match && !selected.find(s => s.id === match.id)) selected.push(match);
+        }
+        // Pad with default ones if the user asked for some but we couldn't resolve them
+        if (selected.length === 0) selected = availableCouncilors.slice(0, 5);
+    } else {
+        selected = availableCouncilors.slice(0, 5);
+    }
+    if (selected.length === 0) selected = availableCouncilors.slice(0, 5);
+
     liveSession = {
         id: `session-${Date.now()}`,
         topic,
@@ -287,175 +315,122 @@ app.post('/api/session/start', (req, res) => {
         phase: 'opening',
         startedAt: Date.now(),
         messages: [],
-        councilors: availableCouncilors.map(c => ({ ...c, status: 'waiting', speaking: false })),
+        contextBlocks: [],
+        councilors: selected.map(c => ({ ...c, status: 'waiting', speaking: false })),
+        votes: {},
         voteData: null,
+        audit: [{ ts: new Date().toISOString(), event: 'session_start', topic, mode: mode || 'proposal', councilors: selected.map(c => c.id) }],
         stats: { messages: 0, yeas: 0, nays: 0 }
     };
     sseBroadcast('session_start', liveSession);
     res.json({ ok: true, sessionId: liveSession.id });
-    
+
     // Auto-start deliberation if enabled (async)
     if (AUTO_DELIBERATION && topic) {
-        setTimeout(() => startLLMDeliberation(topic, mode), 1000);
+        setTimeout(() => startLLMDeliberation(topic, mode, selected), 1000);
     }
 });
 
-// Auto-deliberation with REAL LLM calls
-async function startLLMDeliberation(topic, mode) {
+// Auto-deliberation with REAL LLM calls.
+// Runs each selected councilor in turn, with each one seeing the prior messages
+// and context. Falls back to a small set of default roles if the councilor
+// entry lacks a description.
+async function startLLMDeliberation(topic, mode, selectedCouncilors) {
     if (!liveSession || liveSession.phase === 'ended') return;
-    
-    // Get first 5 enabled councilors from file
-    let councilors = [];
-    try {
-        const councilorsData = JSON.parse(readFileSync(join(__dirname, 'councilors.json'), 'utf-8'));
-        councilors = councilorsData.filter(c => c.enabled).slice(0, 5);
-    } catch (e) {}
-    
-    const numCouncilors = councilors.length;
-    
-    // Build context
-    const contextMessages = [
-        { role: 'system', content: `You are facilitating an AI Council deliberation on the topic: "${topic}".
 
-Council roles:
-${councilors.map((c, i) => `${i+1}. ${c.name} (${c.role}): ${c.description || 'A wise councilor'}`).join('\n')}
+    const councilors = (selectedCouncilors && selectedCouncilors.length > 0)
+        ? selectedCouncilors
+        : (() => {
+            try {
+                return JSON.parse(readFileSync(join(__dirname, 'councilors.json'), 'utf-8'))
+                    .filter(c => c.enabled).slice(0, 5);
+            } catch (e) { return []; }
+        })();
+
+    if (councilors.length === 0) {
+        appendAudit('deliberation_skipped', { reason: 'no councilors' });
+        return;
+    }
+
+    const baseSystem = `You are a councilor in an AI Council deliberation on the topic: "${topic}".
+Mode: ${mode || 'proposal'}.
+
+Your councilors (in speaking order):
+${councilors.map((c, i) => `${i+1}. ${c.name} (${c.role}) — ${c.description || 'a wise councilor'}`).join('\n')}
 
 Rules:
-- Each councilor speaks from their unique perspective
-- Be concise but thoughtful (100-200 words)
-- Stay in character as your assigned role
-- Address the topic directly with unique insights
-- When High Speaker, summarize and call for vote` },
-        { role: 'user', content: `Topic: "${topic}"
+- Speak from your unique perspective in 100-200 words.
+- Reference specific prior points by councilor name when relevant.
+- Stay in character as your assigned role.
+- If you are the last speaker in the round, briefly summarize key disagreements and call for a vote.`;
 
-Please have each councilor speak in order. Start with ${councilors[0]?.name || 'The Technocrat'}.` }
-    ];
-    
-    // Get opening from first councilor
-    const openingMsg = await callLLM([
-        ...contextMessages,
-        { role: 'user', content: `As ${councilors[0]?.name || 'The Technocrat'}, give your opening statement on: "${topic}". Be concise and speak from your role's perspective.` }
-    ]);
-    
-    if (!openingMsg.error) {
-        const msg = {
-            id: `msg-${Date.now()}`,
-            councilor: councilors[0]?.name || 'The Technocrat',
-            role: councilors[0]?.role || 'councilor',
-            content: openingMsg.content,
-            timestamp: new Date().toISOString(),
-            vote: null
-        };
-        liveSession.messages.push(msg);
-        liveSession.stats.messages++;
-        sseBroadcast('message', msg);
+    // Round 1: opening — each councilor in order, no prior context yet
+    for (let i = 0; i < councilors.length; i++) {
+        if (liveSession.phase === 'ended') return;
+        const c = councilors[i];
+        const isLast = (i === councilors.length - 1);
+        const messages = [
+            { role: 'system', content: baseSystem },
+            { role: 'user', content: `As ${c.name}, give your opening statement on: "${topic}". ${isLast ? 'You will be the last opener — set up the debate and call for round 2.' : 'Be concise.'}` }
+        ];
+        await generateCouncilorMessage(c, messages, i);
+        await sleep(DELIBERATION_DELAY_MS);
     }
-    
-    // Debate rounds
-    await new Promise(r => setTimeout(r, 3000));
-    
-    // Second councilor
-    if (liveSession.phase === 'ended') return;
-    const msg2 = await callLLM([
-        ...contextMessages,
-        { role: 'assistant', content: `Opening from ${councilors[0]?.name || 'The Technocrat'}` },
-        { role: 'user', content: `As ${councilors[1]?.name || 'The Ethicist'}, respond to the topic: "${topic}". What ethical considerations apply?` }
-    ]);
-    
-    if (!msg2.error) {
-        const msg = {
-            id: `msg-${Date.now()}`,
-            councilor: councilors[1]?.name || 'The Ethicist',
-            role: councilors[1]?.role || 'councilor',
-            content: msg2.content,
-            timestamp: new Date().toISOString(),
-            vote: null
-        };
-        liveSession.messages.push(msg);
-        liveSession.stats.messages++;
-        sseBroadcast('message', msg);
+
+    // Round 2: response — each councilor responds to prior points
+    for (let i = 0; i < councilors.length; i++) {
+        if (liveSession.phase === 'ended') return;
+        const c = councilors[i];
+        const messages = [
+            { role: 'system', content: baseSystem },
+            ...liveSession.messages.map(m => ({ role: 'user', content: `${m.councilor}: ${m.content}` })),
+            { role: 'user', content: `As ${c.name}, respond to the prior points. Quote at least one specific councilor by name and agree, refine, or rebut their point. Then add a new angle.` }
+        ];
+        await generateCouncilorMessage(c, messages, i + councilors.length);
+        await sleep(DELIBERATION_DELAY_MS);
     }
-    
-    await new Promise(r => setTimeout(r, 3000));
-    
-    // Third councilor
-    if (liveSession.phase === 'ended') return;
-    const msg3 = await callLLM([
-        ...contextMessages,
-        { role: 'user', content: `As ${councilors[2]?.name || 'The Pragmatist'}, address: "${topic}" from a practical standpoint. What are the real-world implications?` }
-    ]);
-    
-    if (!msg3.error) {
-        const msg = {
-            id: `msg-${Date.now()}`,
-            councilor: councilors[2]?.name || 'The Pragmatist',
-            role: councilors[2]?.role || 'councilor',
-            content: msg3.content,
-            timestamp: new Date().toISOString(),
-            vote: null
-        };
-        liveSession.messages.push(msg);
-        liveSession.stats.messages++;
-        sseBroadcast('message', msg);
-    }
-    
-    await new Promise(r => setTimeout(r, 3000));
-    
-    // Fourth councilor (Visionary)
-    if (liveSession.phase === 'ended') return;
-    const msg4 = await callLLM([
-        ...contextMessages,
-        { role: 'user', content: `As ${councilors[3]?.name || 'The Visionary'}, look ahead: What future implications does "${topic}" have?` }
-    ]);
-    
-    if (!msg4.error) {
-        const msg = {
-            id: `msg-${Date.now()}`,
-            councilor: councilors[3]?.name || 'The Visionary',
-            role: councilors[3]?.role || 'councilor',
-            content: msg4.content,
-            timestamp: new Date().toISOString(),
-            vote: null
-        };
-        liveSession.messages.push(msg);
-        liveSession.stats.messages++;
-        sseBroadcast('message', msg);
-    }
-    
-    await new Promise(r => setTimeout(r, 3000));
-    
-    // High Speaker (summary + call for vote)
-    if (liveSession.phase === 'ended') return;
-    const summary = await callLLM([
-        ...contextMessages,
-        { role: 'user', content: `As the High Speaker, summarize the debate on "${topic}" and call for a vote. Be authoritative and clear.` }
-    ]);
-    
-    if (!summary.error) {
-        const msg = {
-            id: `msg-${Date.now()}`,
-            councilor: councilors[4]?.name || 'High Speaker',
-            role: 'speaker',
-            content: summary.content,
-            timestamp: new Date().toISOString(),
-            vote: null
-        };
-        liveSession.messages.push(msg);
-        liveSession.stats.messages++;
-        sseBroadcast('message', msg);
-    }
-    
-    await new Promise(r => setTimeout(r, 3000));
-    
+
     // Move to voting phase
     if (liveSession.phase !== 'ended') {
         liveSession.phase = 'voting';
+        appendAudit('phase', { phase: 'voting' });
         sseBroadcast('phase', { phase: 'voting' });
-        
-        // Call LLM to get actual vote counts based on deliberation
-        await new Promise(r => setTimeout(r, 2000));
+        await sleep(1500);
         await runActualVoting(topic);
     }
+}
+
+async function generateCouncilorMessage(councilor, messages, indexHint) {
+    if (liveSession.phase === 'ended') return;
+    // Resolve the councilor's preferred model against the active provider.
+    // Councilors.json may say "MiniMax-M2.7" but if the active provider is lmstudio,
+    // that model won't exist. Only override the provider's default model when the
+    // councilor's model looks compatible with the active provider.
+    const activeProvider = currentProvider;
+    const isLmStudio = activeProvider === 'lmstudio';
+    const councilorModel = (councilor.model || '').toLowerCase();
+    const isLocalModel = councilorModel.includes('gemma') || councilorModel.includes('qwen') || councilorModel.includes('llama') || councilorModel.includes('duckbot') || councilorModel.includes('jan');
+    const modelOverride = (isLmStudio && !isLocalModel) ? undefined : councilor.model;
+    const result = await callLLM(messages, modelOverride ? { model: modelOverride } : {});
+    if (result.error) {
+        appendAudit('message_error', { councilor: councilor.id, error: result.error, requested_model: councilor.model, provider: activeProvider });
+        return;
+    }
+    const msg = {
+        id: `msg-${Date.now()}-${indexHint}`,
+        councilor: councilor.name,
+        councilorId: councilor.id,
+        role: councilor.role,
+        content: result.content,
+        timestamp: new Date().toISOString(),
+        model: result.model,
+        provider: result.provider,
+        vote: null
+    };
+    liveSession.messages.push(msg);
+    liveSession.stats.messages++;
+    appendAudit('message', { councilor: councilor.id, id: msg.id, model: result.model });
+    sseBroadcast('message', msg);
 }
 
 // Real voting using LLM to determine votes
@@ -496,13 +471,15 @@ Return JSON with yeas (25-45) and nays (10-30) based on the debate quality.` }
     liveSession.stats.yeas = yeas;
     liveSession.stats.nays = nays;
     liveSession.voteData = { yeas, nays, quorum: true, reasoning: voteAnalysis.content?.substring(0, 200) || 'Council majority' };
-    
+
+    appendAudit('vote', { phase: 'auto-tally', yeas, nays });
     sseBroadcast('vote', { yeas, nays, total: yeas + nays, reasoning: liveSession.voteData.reasoning });
-    
+
     // End session
     setTimeout(() => {
         if (liveSession) {
             liveSession.phase = 'ended';
+            appendAudit('phase', { phase: 'ended' });
             sseBroadcast('phase', { phase: 'ended' });
         }
     }, 5000);
@@ -594,8 +571,11 @@ app.post('/api/session/clear', (req, res) => {
         phase: 'idle',
         startedAt: null,
         messages: [],
+        contextBlocks: [],
         councilors: [],
+        votes: {},
         voteData: null,
+        audit: [],
         stats: { messages: 0, yeas: 0, nays: 0 }
     };
     sseBroadcast('session_clear', {});
@@ -646,6 +626,183 @@ app.get('/api/modes', (req, res) => {
         total: 9,
         version: '3.0.0'
     });
+});
+
+// ── CONTEXT, VOTING, AUDIT, MCP JSON-RPC ────────────────────────────────────
+app.post('/api/session/push-context', (req, res) => {
+    if (!liveSession) return res.status(400).json({ error: 'no active session' });
+    const { context } = req.body;
+    if (typeof context !== 'string') return res.status(400).json({ error: 'context must be a string' });
+    const block = { id: `ctx-${Date.now()}`, context, ts: new Date().toISOString() };
+    liveSession.contextBlocks.push(block);
+    appendAudit('context_push', { id: block.id, len: context.length });
+    sseBroadcast('context', block);
+    res.json({ ok: true, id: block.id, total: liveSession.contextBlocks.length });
+});
+
+app.get('/api/session/context', (req, res) => {
+    if (!liveSession) return res.json({ blocks: [], total: 0 });
+    res.json({ blocks: liveSession.contextBlocks, total: liveSession.contextBlocks.length });
+});
+
+app.post('/api/session/clear-context', (req, res) => {
+    if (!liveSession) return res.json({ ok: true });
+    liveSession.contextBlocks = [];
+    appendAudit('context_clear', {});
+    sseBroadcast('context_cleared', {});
+    res.json({ ok: true });
+});
+
+app.post('/api/session/vote', (req, res) => {
+    if (!liveSession) return res.status(400).json({ error: 'no active session' });
+    const { option, rationale, councilorId } = req.body;
+    if (!option) return res.status(400).json({ error: 'option is required' });
+    const vote = {
+        id: `vote-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+        option: String(option).toLowerCase(),
+        rationale: rationale || null,
+        councilorId: councilorId || null,
+        ts: new Date().toISOString()
+    };
+    liveSession.votes[vote.id] = vote;
+    if (vote.option === 'yea' || vote.option === 'yes') liveSession.stats.yeas = (liveSession.stats.yeas || 0) + 1;
+    if (vote.option === 'nay' || vote.option === 'no') liveSession.stats.nays = (liveSession.stats.nays || 0) + 1;
+    appendAudit('vote', { id: vote.id, option: vote.option, councilorId: vote.councilorId });
+    sseBroadcast('vote_cast', vote);
+    res.json({ ok: true, vote, stats: liveSession.stats });
+});
+
+app.get('/api/session/votes', (req, res) => {
+    if (!liveSession) return res.json({ votes: {}, stats: { yeas: 0, nays: 0 } });
+    res.json({ votes: liveSession.votes || {}, stats: liveSession.stats, total: Object.keys(liveSession.votes || {}).length });
+});
+
+app.get('/api/session/audit', (req, res) => {
+    if (!liveSession) return res.json({ events: [], total: 0 });
+    const limit = Math.max(1, Math.min(parseInt(req.query.limit, 10) || 100, 500));
+    const events = (liveSession.audit || []).slice(-limit);
+    res.json({ events, total: liveSession.audit.length, returned: events.length });
+});
+
+app.get('/api/session/consensus', (req, res) => {
+    if (!liveSession) return res.status(400).json({ error: 'no active session' });
+    const votes = Object.values(liveSession.votes || {});
+    const yeas = votes.filter(v => v.option === 'yea' || v.option === 'yes').length;
+    const nays = votes.filter(v => v.option === 'nay' || v.option === 'no').length;
+    const total = votes.length;
+    const ratio = total === 0 ? 0 : yeas / total;
+    res.json({
+        sessionId: liveSession.id,
+        total,
+        yeas,
+        nays,
+        ratio: Number(ratio.toFixed(3)),
+        majority: yeas > nays ? 'yea' : (nays > yeas ? 'nay' : 'tied'),
+        messageCount: liveSession.messages.length,
+        contextBlocks: liveSession.contextBlocks.length,
+        phase: liveSession.phase
+    });
+});
+
+// ── JSON-RPC `/mcp` bridge used by ai-council/mcp-server.mjs ─────────────────
+// The MCP proxy calls `tools/call` for everything (push_context, vote, etc.).
+// This endpoint dispatches the JSON-RPC `method` field to the right local handler.
+const RPC_HANDLERS = {
+    'tools/list': () => ({
+        tools: [
+            { name: 'push_context', description: 'Add context to the active session' },
+            { name: 'vote', description: 'Cast a vote in the deliberation' },
+            { name: 'get_votes', description: 'Get all votes' },
+            { name: 'get_consensus', description: 'Get consensus tally' },
+            { name: 'subscribe_deliberation', description: 'SSE subscribe to session' },
+            { name: 'get_audit_log', description: 'Get audit log' },
+            { name: 'export_audit_log', description: 'Export audit log' },
+            { name: 'clear_context', description: 'Clear context' },
+            { name: 'get_context_window', description: 'Get context window' },
+            { name: 'delegate_to', description: 'Delegate to a councilor' },
+            { name: 'coordinate_agents', description: 'Coordinate agents' },
+            { name: 'get_agent_status', description: 'Get agent status' },
+            { name: 'list_resources', description: 'List MCP resources' },
+            { name: 'read_resource', description: 'Read MCP resource' },
+            { name: 'subscribe_resource', description: 'Subscribe to MCP resource' },
+            { name: 'set_api_key', description: 'Set API key' },
+            { name: 'validate_token', description: 'Validate API token' },
+            { name: 'get_rate_limits', description: 'Get rate limits' },
+            { name: 'register_webhook', description: 'Register webhook' },
+            { name: 'list_webhooks', description: 'List webhooks' },
+            { name: 'delete_webhook', description: 'Delete webhook' }
+        ]
+    }),
+
+    'tools/call': async (params) => {
+        const { name, arguments: args = {} } = params || {};
+        switch (name) {
+            case 'push_context': {
+                if (!liveSession) return { error: 'no active session' };
+                liveSession.contextBlocks.push({ id: `ctx-${Date.now()}`, context: args.context, ts: new Date().toISOString() });
+                appendAudit('context_push', { len: (args.context || '').length });
+                return { ok: true, total: liveSession.contextBlocks.length };
+            }
+            case 'vote': {
+                if (!liveSession) return { error: 'no active session' };
+                const opt = String(args.option || '').toLowerCase();
+                const id = `vote-${Date.now()}`;
+                liveSession.votes[id] = { id, option: opt, rationale: args.rationale, councilorId: args.councilorId, ts: new Date().toISOString() };
+                if (opt === 'yea' || opt === 'yes') liveSession.stats.yeas++;
+                if (opt === 'nay' || opt === 'no') liveSession.stats.nays++;
+                appendAudit('vote', { id, option: opt });
+                return { ok: true, id, stats: liveSession.stats };
+            }
+            case 'get_votes': return liveSession ? { votes: liveSession.votes, stats: liveSession.stats } : { votes: {}, stats: { yeas: 0, nays: 0 } };
+            case 'get_consensus': {
+                if (!liveSession) return { error: 'no active session' };
+                const v = Object.values(liveSession.votes || {});
+                const yeas = v.filter(x => x.option === 'yea' || x.option === 'yes').length;
+                const nays = v.filter(x => x.option === 'nay' || x.option === 'no').length;
+                return { yeas, nays, total: v.length, ratio: v.length ? Number((yeas / v.length).toFixed(3)) : 0, majority: yeas > nays ? 'yea' : (nays > yeas ? 'nay' : 'tied') };
+            }
+            case 'subscribe_deliberation': return { ok: true, stream: '/api/events', sessionId: liveSession?.id || null };
+            case 'get_audit_log': return { events: (liveSession?.audit || []).slice(-(args.limit || 100)), total: (liveSession?.audit || []).length };
+            case 'export_audit_log': return { events: liveSession?.audit || [], format: args.format || 'json' };
+            case 'clear_context': if (liveSession) { liveSession.contextBlocks = []; appendAudit('context_clear', {}); } return { ok: true };
+            case 'get_context_window': return liveSession ? { blocks: liveSession.contextBlocks, total: liveSession.contextBlocks.length } : { blocks: [], total: 0 };
+            case 'delegate_to': {
+                if (!liveSession) return { error: 'no active session' };
+                const c = (liveSession.councilors || []).find(x => x.id === args.councilorId || (x.name || '').toLowerCase() === String(args.councilorId || '').toLowerCase());
+                if (!c) return { error: `unknown councilor: ${args.councilorId}` };
+                const result = await callLLM([
+                    { role: 'system', content: `You are ${c.name} (${c.role}). ${c.description || ''} Address the user's task from your unique perspective.` },
+                    { role: 'user', content: args.task }
+                ], { model: c.model });
+                return { councilor: c.name, ...result };
+            }
+            case 'coordinate_agents': return { ok: true, note: 'coordination stub — use /api/session/start with explicit councilors', agents: args.agents, task: args.task };
+            case 'get_agent_status': return { session: liveSession ? { id: liveSession.id, phase: liveSession.phase, messageCount: liveSession.messages.length, councilorCount: liveSession.councilors.length } : null, sseClients: SSE_CLIENTS.size, currentProvider };
+            case 'list_resources': return { resources: [{ uri: 'session://current', name: 'Current Session' }] };
+            case 'read_resource': return args.uri === 'session://current' ? { contents: [{ uri: 'session://current', text: JSON.stringify(liveSession, null, 2) }] } : { error: 'unknown uri' };
+            case 'subscribe_resource': return { ok: true, uri: args.uri, stream: '/api/events' };
+            case 'set_api_key': return { ok: true, note: 'set via env var on next restart', provider: args.provider || 'minimax' };
+            case 'validate_token': return { valid: true, token: (args.token || '').slice(0, 6) + '***' };
+            case 'get_rate_limits': return { currentProvider, providers: listProviders(), window: 'session' };
+            case 'register_webhook': return { ok: true, id: `wh-${Date.now()}`, url: args.url, events: args.events };
+            case 'list_webhooks': return { webhooks: [] };
+            case 'delete_webhook': return { ok: true, id: args.id };
+            default: return { error: `Unknown tool: ${name}` };
+        }
+    }
+};
+
+app.post('/mcp', async (req, res) => {
+    const { jsonrpc, method, params, id } = req.body || {};
+    if (jsonrpc !== '2.0') return res.status(400).json({ jsonrpc: '2.0', error: { code: -32600, message: 'invalid jsonrpc' }, id: id || null });
+    const handler = RPC_HANDLERS[method];
+    if (!handler) return res.status(404).json({ jsonrpc: '2.0', error: { code: -32601, message: `method not found: ${method}` }, id });
+    try {
+        const result = await handler(params || {});
+        res.json({ jsonrpc: '2.0', result, id });
+    } catch (e) {
+        res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message }, id });
+    }
 });
 
 // ── ASK (ONE-SHOT) ──────────────────────────────────────────────────────────
