@@ -33,8 +33,3 @@ session_*.json
 # Local settings
 settings.local.json
 settings.json
-
-# Runtime state
-*.pid
-council-api.log
-council-mcp.log
